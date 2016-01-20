@@ -1,0 +1,191 @@
+;----------------------------------------------------Início do Código--------------------------------------------------------
+
+ORG 0
+inicializando_variaveis:
+
+	LDA zero
+	STA error_code
+	STA result_more_sb ;resultado-digito mais significativo
+	STA result_less_sb ;resultado-digito menos significativo
+	STA rest
+	STA A_more_sb_temp ;A - digito mais significativo - temporario
+	STA A_less_sb_temp ;A - digito menos significativo - temporario
+	STA resto
+	STA usar_carry; ADDRESS 17
+	
+;----------------------------------------------------------------------------------------------------------------------------
+
+ORG 128
+declaracoes_variaveis:
+	
+	op_A_more_sb: DB ; ADRESS>128
+	op_A_less_sb: DB ; ADDRESS>129
+	op_B: DB ; ADDRESS>130
+	opcode: DB ; ADDRESS>131
+	error_code: DB ; ADDRESS>132
+	result_more_sb: DB ; ADDRESS>133
+	result_less_sb: DB ; ADDRESS>134
+	rest: DB ; ADDRESS>135
+	zero: DB 0 ; ADDRESS>136
+	A_more_sb_temp: DB ; ADDRESS>137
+	A_less_sb_temp: DB ; ADDRESS>138
+	num_um: DB 1 ; Para subtracoes e erro de opcode invalido,  posicao 139 - ADDRESS>139 
+	num_dois: DB 2; Para erro de tentativa de divisao por zero, posicao 140 - ADDRESS>140
+	resto: DB; ADDRESS>141
+	usar_carry: DB; ADDRESS>142
+	contador_decrement: DB 16; Sera usado para as sucessivas subtracoes do B em Carry terminar alguma hora e nao entrar em loop infinito, uma vez a mais por que ja decremento uma vez antes - ADDRESS>143
+	contador_decrement_temp: DB 16; ADDRESS 144
+
+;----------------------------------------------------------------------------------------------------------------------------
+
+
+ORG 18
+chamando_operacoes:
+
+	LDA opcode
+	SUB num_um; 
+	JZ A_dividido_por_dois
+	SUB num_um
+	JZ A_dividido_por_quatro 
+	SUB num_um
+	JZ A_dividido_por_B
+	JMP erro_codigo_de_operacao_invalido; ADDRESS 33
+
+;ERROS(132)------------------------------------------------------------------------------------------------------------------
+
+ORG 50	
+erro_codigo_de_operacao_invalido:
+	
+	LDA num_um
+	STA error_code
+	JMP 255
+
+
+ORG 148
+	erro_tentativa_de_divisao_por_zero:
+	
+	LDA num_dois; 140
+	STA error_code; 132
+	JMP 255; vai para o HLT - ADDRESS 201
+
+;----------------------------------------------------------------------------------------------------------------------------
+
+;OPERACOES(131)--------------------------------------------------------------------------------------------------------------
+
+ORG 57
+A_dividido_por_dois:
+
+	LDA op_A_more_sb
+	SHR
+	STA result_more_sb; resultado de byte mais significativo
+	LDA op_A_less_sb
+	ROR
+	STA result_less_sb
+	JC indica_resto; Vai para o endereco onde coloca o 1 no endereco 135 para indicar que ouve resto na operacao
+	JMP 251; vai para o HLT quando encerra-se a operacao
+
+ORG 71
+A_dividido_por_quatro:
+
+	LDA op_A_more_sb
+	SHR
+	STA result_more_sb
+	SHR
+	STA result_more_sb
+	LDA op_A_less_sb
+	ROR
+	STA result_less_sb
+	ROR
+	STA result_less_sb
+	JC indica_resto;  Vai para o endereco onde coloca o 1 no endereco 135 para indicar que ouve resto na operacao
+	JMP 255; vai para o HLT quando encerra-se a operacao
+
+ORG 91
+A_dividido_por_B:
+	
+	LDA op_B; Inicio da operacao!
+	JZ erro_tentativa_de_divisao_por_zero; Verificacao para ver se o divisor nao eh zero
+	LDA op_A_less_sb
+	STA A_less_sb_temp; para nao ocorrer modificacao no op_A_less_sb fiz uso de um operando temporario
+	LDA op_A_more_sb
+	STA A_more_sb_temp
+	LDA contador_decrement; ADDRESS 103-104
+	STA contador_decrement_temp
+	LDA contador_decrement_temp; carrego novamente no contador temporario para que nao ocorra erro em operacoes consecutivas - ADDRESS 104
+	SUB num_um
+	STA contador_decrement_temp
+	JZ final_programa; ADDRESS 113-114 - Verificador para ver se o contador temporario ja chegou a zero
+	LDA A_less_sb_temp; carregado de novo para usar no laco que tem;
+	SHL
+	STA A_less_sb_temp
+	LDA A_more_sb_temp
+	ROL; pega o que estah no carry e coloca no bit menos significativo do op_A_more_sb
+	STA A_more_sb_temp
+	JMP continua_a_div_b; ADDRESS 125-126
+
+ORG 34
+continua_a_div_b: ;O uso dos "continua's" ao longo do código são devido às variaveis fixas que não poderiam ter seus endereços invadidos por instruções
+	
+	LDA usar_carry; variavel que pega o que tem no carry e usa para testar se a subtracao por B pode ou nao ser feita
+	ROL
+	STA usar_carry
+	LDA usar_carry; 
+	SUB op_B; subtrai 'B' da parcela do numero e ve se deu "borrow" ou nao
+	JB 107
+	STA usar_carry; ADDRESS 45-46
+	JMP continua_a_por_b; O salto para outro endereco foi feito em virtude de que as proximas instrucoes invadiriam o local da declaracao das variaveis e constantes, alem de atrapalhar onde sempre coloco o fim do programa(ADDRESS 48)
+
+ORG 160
+continua_a_por_b:
+	
+	LDA result_less_sb
+	SHL
+	STA result_less_sb;
+	LDA result_more_sb
+	ROL
+	STA result_more_sb
+	LDA result_less_sb
+	ADD num_um
+	STA result_less_sb; Finish caso_not_borrow
+	LDA contador_decrement_temp; ADDRESS 176-177
+	JZ final_programa
+	LDA A_less_sb_temp
+	SHL
+	STA A_less_sb_temp
+	LDA A_more_sb_temp
+	ROL
+	STA A_more_sb_temp 
+	LDA usar_carry
+	ROL
+	STA usar_carry; ADDRESS 94
+	LDA contador_decrement_temp 
+	SUB num_um
+	STA contador_decrement_temp
+	LDA usar_carry; ADDRESS 202
+	SUB op_B
+	JNB 45
+	LDA result_less_sb; Inicia caso que a subtracao nao deu certo
+	SHL
+	STA result_less_sb;
+	LDA result_more_sb
+	ROL
+	STA result_more_sb
+	JMP 176; volta pro loop mesmo a subtracao do b nao ter dado certo; ADDRESS 218
+
+;----------------------------------------------------------------------------------------------------------------------------
+
+ORG 154
+indica_resto: 
+
+	LDA num_um
+	STA rest; armazena no indicador de resto
+	JMP 255; vai para o HLT quando encerra-se a operacao - ADDRESS 159
+
+;----------------------------------------------------------------------------------------------------------------------------
+
+ORG 251
+final_programa:
+	
+	LDA usar_carry
+	JNZ indica_resto
+	HLT
